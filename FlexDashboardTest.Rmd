@@ -1,0 +1,61 @@
+---
+title: "Test Flex Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(plotly)
+library(DT) #datatable function
+```
+
+Sidebar Title {.sidebar}
+============
+### About
+Test text here for a sidebar - use equals signs when you have more than one page. 
+
+# Page 1 {data-icon="fa-kiwi-bird"}
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+Look at this cool plot! 
+
+### Chart A
+
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+
+ggplot(mtcars, aes(x =  mpg, y = disp)) +
+  geom_point() +
+  theme_minimal()
+```
+
+Column {data-width=350 .tabset}
+-----------------------------------------------------------------------
+
+### Chart B
+
+
+```{r}
+p <- ggplot(mtcars, aes(x =  gear, y = cyl, fill = carb)) +
+  geom_bar(stat = "identity")
+
+ggplotly(p)
+```
+
+> Here's another cool plot as;ldkfja;ls aldkfjwalei as;iealxv alsdkjfa;lskdjfal;skdjafl;ksdjfal;ksdjflaksdjfal;siejlfisajl
+
+### Chart C
+
+```{r}
+ggplot(mtcars, aes(x = mpg, y = wt, color = cyl)) +
+  geom_point()
+```
+
+# Page 2 {data-icon="fa-bicycle"}
