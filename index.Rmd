@@ -108,7 +108,7 @@ mapsubset <- ridesubset %>%
          end_station_latitude, end_station_longitude) %>%
   gather(key = group, value = location, -id) %>%
   separate(group, c("group", "disc", "where")) %>%
-  select(-"disc") %>%
+  select(-one_of("disc")) %>%
   spread(where, location)
 ```
 
@@ -166,7 +166,7 @@ mapsubset <- ridesubset %>%
          end_station_latitude, end_station_longitude) %>%
   gather(key = group, value = location, -id, -month) %>%
   separate(group, c("group", "disc", "where")) %>%
-  select(-"disc") %>%
+  select(-one_of("disc")) %>%
   spread(where, location)
 
 y <- points_to_line(mapsubset, "longitude", "latitude", "id")

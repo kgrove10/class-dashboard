@@ -3,14 +3,19 @@ library(rio)
 library(lubridate)
 library(janitor)
 
-d9 <- import("201809-bluebikes-tripdata.csv", setclass = "tbl_df") %>%
+d9 <- import("./201809-bluebikes-tripdata.csv", setclass = "tbl_df") %>%
     clean_names() %>%
-    mutate(month = "september") %>%
-    clean_names()
+    mutate(month = "september")
 
 trips_september <- d9 %>%
     filter(tripduration < 3600) %>%
     mutate(tripminutes = (tripduration/60))
+
+trips_september <- trips_september %>%
+    separate(starttime, c("startdate", "starttime"), sep = " ") %>%
+    separate(stoptime, c("stopdate", "stoptime"), sep = " ") %>%
+    mutate(startdate = ymd(startdate), stopdate = ymd(stopdate)) %>%
+    mutate(weekday = weekdays(startdate))
 
 plot <- trips_september %>%
     ggplot(aes(x = tripminutes)) +
@@ -49,7 +54,7 @@ fillCol(height = 600, flex = c(NA, 1),
         plotOutput("shinyPlot", height = "100%")
 )
 
-output$shinyPlot <- renderPlot({
+renderPlot({
     (plot <- trips_september %>%
          ggplot(aes(x = tripminutes)) +
          geom_density(fill = "black", color = "white",
