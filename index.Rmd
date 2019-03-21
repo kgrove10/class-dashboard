@@ -1,0 +1,749 @@
+---
+title: "EDLD 610 Final Project"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    storyboard: true
+    theme: yeti
+    logo: bluebike.png
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(plotly)
+```
+
+Sidebar Title {.sidebar}
+============
+### About This Project
+
+This project utilizes data from the Bluebikes bike share program in Boston, MA in combination with Twitter data to create four visualizations relevant to the usage and perception of the Bluebike system and bike sharing systems in general. You can access Boston's Bluebike usage and station data [here](https://www.bluebikes.com/system-data). 
+
+This flexdashboard is my final project for the EDLD 610: Communicating and Transforming Data Winter 2019 class. While I utilized Boston's bike sharing program data because it is publicly available, I am working on a project with PeaceHealth Rides in Eugene, OR where I hope to apply the skills and data visualization techniques I learned in this class. 
+
+Thanks for visiting my project! 
+
+-Kivalina
+
+
+```{r importdata, echo = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(rio)
+library(dplyr)
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(here)
+
+d1 <- import(here("data", "201801_hubway_tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "january")
+d2 <- import(here("data", "201802_hubway_tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "february")
+d3 <- import(here("data", "201803_hubway_tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "march")
+d4 <- import(here("data", "201804-hubway-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "april")
+d5 <- import(here("data", "201805-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "may")
+d6 <- import(here("data", "201806-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "june")
+d7 <- import(here("data", "201807-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "july")
+d8 <- import(here("data", "201808-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "august")
+d9 <- import(here("data", "201809-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "september")
+d10 <- import(here("data", "201810-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "october")
+d11 <- import(here("data", "201811-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "november")
+d12 <- import(here("data", "201812-bluebikes-tripdata.csv"), setclass = "tbl_df") %>%
+  clean_names() %>%
+  mutate(month = "december")
+
+stations <- import(here("data", "Hubway_Stations_as_of_July_2017.csv"), setclass = "tbl_df") %>%
+  clean_names()
+
+d1 <- d1 %>%
+  mutate(birth_year = as.integer(birth_year))
+
+d2 <- d2 %>%
+  mutate(birth_year = as.integer(birth_year))
+
+d3 <- d3 %>%
+  mutate(birth_year = as.integer(birth_year))
+
+d4 <- d4 %>%
+  mutate(birth_year = as.integer(birth_year))
+
+trips <- bind_rows(d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12)
+
+trips_tidy <- trips %>%
+  separate(starttime, c("startdate", "starttime"), sep = " ") %>%
+  separate(stoptime, c("stopdate", "stoptime"), sep = " ") %>%
+  mutate(startdate = ymd(startdate), stopdate = ymd(stopdate)) %>%
+  mutate(weekday = weekdays(startdate)) %>%
+  separate(starttime, c("hour", "minute", "second"))
+
+ridesubset <- trips_tidy %>%
+  filter(month == "september", weekday == "Monday", hour == "11", usertype == "Subscriber")
+
+mapsubset <- ridesubset %>%
+  mutate(id = seq.int(nrow(ridesubset))) %>%
+  select(id,
+         start_station_latitude, start_station_longitude, 
+         end_station_latitude, end_station_longitude) %>%
+  gather(key = group, value = location, -id) %>%
+  separate(group, c("group", "disc", "where")) %>%
+  select(-"disc") %>%
+  spread(where, location)
+```
+
+```{r points_to_line, message=FALSE, warning=FALSE}
+library(sp)
+library(maptools)
+
+points_to_line <- function(data, long, lat, id_field = NULL, sort_field = NULL) {
+  coordinates(data) <- c(long, lat)
+  if (!is.null(sort_field)) {
+    if (!is.null(id_field)) {
+      data <- data[order(data[[id_field]], data[[sort_field]]), ]
+    } else {
+      data <- data[order(data[[sort_field]]), ]
+    }
+  }
+  if (is.null(id_field)) {
+   lines <- SpatialLines(list(Lines(list(Line(data)), "id")))
+   return(lines)
+  } else if (!is.null(id_field)) {  
+    paths <- sp::split(data, data[[id_field]])
+    sp_lines <- SpatialLines(list(Lines(list(Line(paths[[1]])), "line1")))
+    for (p in 2:length(paths)) {
+      id <- paste0("line", as.character(p))
+      l <- SpatialLines(list(Lines(list(Line(paths[[p]])), id)))
+      sp_lines <- spRbind(sp_lines, l)
+    }
+    return(sp_lines)
+  }
+}
+```
+
+# Visualization 1 {data-icon="fa-map-marker-alt" .storyboard}
+
+*This visual is intended to convey the complexity of the bike share program by displaying all of the trips taken by one bike in the system (bike #3008) over the course of the year.*
+
+### Where I started {data-commentary-width=400}
+
+```{r mapOneBike, fig.height=4, fig.width=4}
+library(leaflet)
+library(shiny)
+
+popularbike <- trips_tidy %>%
+  group_by(bikeid) %>%
+  count() %>%
+  arrange(desc(n))
+ 
+ridesubset <- trips_tidy %>%
+  filter(bikeid == head(popularbike$bikeid, 1))
+
+mapsubset <- ridesubset %>%
+    mutate(id = seq.int(nrow(ridesubset))) %>%
+    select(id,month,
+         start_station_latitude, start_station_longitude, 
+         end_station_latitude, end_station_longitude) %>%
+  gather(key = group, value = location, -id, -month) %>%
+  separate(group, c("group", "disc", "where")) %>%
+  select(-"disc") %>%
+  spread(where, location)
+
+y <- points_to_line(mapsubset, "longitude", "latitude", "id")
+
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addPolylines(data = y) %>%
+    addCircleMarkers()
+```
+
+***
+I started by just trying to display lines representing all of the trips taken by one bicycle, as generated by the starting point and ending point of each trip (since we don't have data on exactly where the bike went during the trip). I choose this bike because, out of 4,045 bicycles, it had the greatest number of trips (970) during the year. This visual is intended for consumption by the public, potentially through an advertising campaign to communicate the popularity of the bike sharing program to encourage public use. In addition to mapping the trips, I also wanted to map the stations with points to make the visual clearer in terms of starting and ending points. Not all of the starting and ending points will be at stations (bikes are sometimes left outside hubs), but the majority of the trips will either begin or end at one of these points, so adding points that represent these stations can help organize these trip lines. 
+
+### Getting Better {data-commentary-width=400}
+
+```{r improvedonebike}
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addPolylines(data = y, opacity = 0.1, weight = 3, color = "blue") %>%
+    addCircleMarkers(popup = stations$station, 
+                   radius = 1, 
+                   color = "black")
+```
+
+***
+Here I've improved by changing the color, weight, and opacity of the lines, in order to make it clearer to see how many lines are present in the areas where they overlap. I've also added a pop-up when you click on the station points that displays the name of the stations. 
+
+### Final Visualization  {data-commentary-width=400}
+
+```{r finalonebike}
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addPolylines(data = y, opacity = 0.1, weight = 3, color = "blue") %>%
+    addCircleMarkers(popup = stations$station, 
+                   radius = 1, 
+                   color = "black") %>%
+  setView(lng = -71.08, lat = 42.3555, zoom = 11.5) %>%
+  setMaxBounds(lng1 = -71.08, 
+               lat1 = 42.365, 
+               lng2 = -71.10, 
+               lat2 = 42.34)
+```
+
+***
+**All of the trips taken by one bike in the Bluebike system (#3008) in 2018.**
+
+In this final visualization, I incorporated some of the amazing feedback from my peer reviewers to make a few changes.  First, I added more explanation to the plot to clarify what I was trying to display.  Second, I changed the default view and zoom, and added a max bounds argument to make the map snap back to the bike share view if you go too far out of bounds. 
+
+I see this visual as being intended for the general public (in the mock up advertising campaign, I extend that intention by making a few more changes), in order to convey the complexity and sheer volume of travel completed by the bikes in the system.  In fact, I used this exact visual in a presentation I just gave at the American Marketing Association conference as a quick demonstration of the complexity in the usage of a bicycle sharing program. 
+
+(Note: I've added the titles to the sidebar rather than the visual because it is basically impossible (as far as I've been able to tell by googling and reading documentation, but I would LOVE advice on this!) to add a title to a leaflet map in a reproducible way, and adding text above the leaflet map disappears when you try to interact with the map.)
+
+### Potential Advertising Campaign {data-commentary-width=400}
+
+```{r advertisingcampaign, fig.height=4, fig.width=4}
+food <- awesomeIcons(
+  icon = 'pizza',
+  iconColor = 'white',
+  library = 'ion',
+  markerColor = 'green'
+)
+
+baseball <- awesomeIcons(
+  icon = 'ios-baseball',
+  iconColor = 'white',
+  library = 'ion',
+  markerColor = 'red'
+)
+
+book <- awesomeIcons(
+  icon = 'ios-book',
+  iconColor = 'white',
+  library = 'ion',
+  markerColor = 'blue'
+)
+
+heart <- awesomeIcons(
+  icon = 'heart',
+  iconColor = 'white',
+  library = 'ion',
+  markerColor = 'pink'
+)
+
+stations %>%
+  leaflet() %>%
+  addProviderTiles("Stamen.Watercolor", tileOptions(opacity = .2),
+                   WMSTileOptions(transparent = TRUE)) %>%
+  addPolylines(data = y, opacity = 0.2, weight = 3, color = "black") %>%
+    addCircleMarkers(popup = stations$station, 
+                   radius = 1, 
+                   color = "black",
+                   opacity = 1) %>%
+  addAwesomeMarkers(~-71.065900, ~42.360665, icon = food, popup = "Tuesday, February 20th </br> Florina Pizzaria </br> Sasha celebrates a new job </br> with the St. Barth Pizza") %>%
+  addAwesomeMarkers(~-71.097029, ~42.346485, icon = baseball, popup = "Saturday, August 4th </br> Fenway Park </br> Liam's First Baseball Game! </br> Red Socks 4, Yankees 1") %>%
+  addAwesomeMarkers(~-71.049778, ~42.327685, icon = heart, popup = "Sunday, June 3rd </br> Joe Moakley Park </br> Ben Proposes. James says yes.") %>%
+  addAwesomeMarkers(~-71.118340, ~42.378036, icon = book, popup = "Tuesday, September 4th </br> Harvard University </br> Naomi's First Ever College Class") %>%
+  setView(lng = -71.08, lat = 42.3555, zoom = 11.5) %>%
+  setMaxBounds(lng1 = -71.08, 
+               lat1 = 42.365, 
+               lng2 = -71.10, 
+               lat2 = 42.34)
+  
+```
+
+***
+**These are just some of the adventures bike #3008 had last year. 177,463 Bluebike riders traveled more than 2,146,416 miles in 2018. Where will our bikes take you?**
+
+This is a mockup of a potential advertising campaign.  I've chosen to make the visual more attention grabbing by using a different background (the stamen watercolor provider tile with leaflet).  This definitely wouldn't be a background I would use for a visual you want to get specific information from, but the point here is less about which stations are where and more about the overall impact of seeing where one bike traveled in a year.  I also added fake markers with different icons at places of interest as a potential way of demonstrating some of the adventures the bluebikes can take you on in a potential advertising campaign. Users can interact and click to read more about a couple events that this bike (fictionally!) completed during its year in the system. I think this would be a really cute way of encouraging use of the bike share program, and encouraging use for activities people might not traditionally think of (thinking of the rides as an adventure in and of itself, where the bicycle is a partner for that adventure, rather than just a means of transportation). 
+
+# Visualization 2  {data-icon="fa-bicycle" .storyboard}
+
+*This visualization is intended to communicate the distribution of bikes at stations compared to the actual usage at each station in terms of number of trips.*
+
+### Where I started {data-commentary-width=400}
+
+```{r mapcolorbyStationStart}
+start_count <- trips_tidy %>%
+  group_by(start_station_latitude, start_station_longitude) %>%
+  count() %>%
+  ungroup()
+ 
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(radius = stations$number_of_docks,
+                   color = start_count$n,
+                   fillOpacity = .6,
+                   weight = 5,
+                   fill = TRUE,
+                   stroke = FALSE)
+```
+
+***
+
+This visualization is intended for usage by experts, policy-makers, and managers of the bicycle sharing program. I wanted to map each of the stations in the city and compare the station's size in terms of number of docks (representing the number of bikes that can be parked at each station), and the bike station's usage in terms of the number of rides that originate from or end at that station. This first graph is an attempt at mapping station size, to which I want to add color indicating the number of rides started from each station.  As we can see, the radius size for each circle is also way too large for it to be readable.  The transparency helps, but I will work on changing the radius size in the next visualization too. 
+
+### Getting Better... {data-commentary-width=400}
+
+```{r mapcolorbyStationStartImproved}
+start_count <- trips_tidy %>%
+  group_by(start_station_latitude, start_station_longitude) %>%
+  count() %>%
+  ungroup()
+
+ pal <- colorNumeric(
+  palette = "viridis",
+  domain = NULL, 
+  na.color = NA)
+ 
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(popup = ~paste0(stations$station, "</br>", "Trips Started: ", start_count$n, "</br>", "Number of Docks: ", stations$number_of_docks),
+                   radius = stations$number_of_docks/3,
+                   color = ~pal(start_count$n),
+                   fillOpacity = .6,
+                   weight = 5,
+                   fill = TRUE,
+                   stroke = FALSE) %>%
+  addLegend(title = "Rides Started", pal = pal, values = c(0:53846), position = "bottomright")
+```
+
+***
+So here I have added color using the viridis (color-blind friendly) palette, and a legend to indicate what the colors indicate in terms of the number of rides started from each station.  I also used a linear transformation (\frac{n}{3}) to make the radius for each circle smaller and more readable. I also added a popup when you click on a station that tells you the station's name, number of trips started, and number of docks. There are still a few things I want to change - I want to update the map like I did for visual 2 so that there are limits and it snaps back to position when you move around on it, and I want to explore other color palettes as well. 
+
+### Final Visualization {data-commentary-width=400}
+
+```{r mapcolorbyStationStartFinal}
+start_count <- trips_tidy %>%
+  group_by(start_station_latitude, start_station_longitude) %>%
+  count() %>%
+  ungroup()
+
+ pal <- colorNumeric(
+  palette = "inferno",
+  domain = NULL, 
+  na.color = NA)
+ 
+stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(popup = ~paste0(stations$station, "</br>", "Trips Started: ", start_count$n, "</br>", "Number of Docks: ", stations$number_of_docks),
+                   radius = stations$number_of_docks/3,
+                   color = ~pal(start_count$n),
+                   fillOpacity = .6,
+                   weight = 5,
+                   fill = TRUE,
+                   stroke = FALSE) %>%
+  addLegend(title = "Rides Started", pal = pal, values = c(0:53846), position = "bottomright") %>%
+    setView(lng = -71.08, lat = 42.3555, zoom = 11.5) %>%
+  setMaxBounds(lng1 = -71.08, 
+               lat1 = 42.365, 
+               lng2 = -71.10, 
+               lat2 = 42.34)
+```
+
+***
+**Map of BlueBike Bike Share Stations in Boston by Station Size and Number of Rides Started in 2018**
+*Larger station markers indicate stations with more bicycle docks.*
+
+Here is my final visualization for the graph of station size by number of rides started at that station.  I've changed a couple things, namely I added a default view and map limits so you can't get lost when scrolling through the map (it automatically snaps you back to the default view if you go too far out of bounds).  I also adjusted the color palette.  In class, we talked about the importance of trying to keep interpretations as native as possible, so I though if we are talking about frequency of use (how many rides are started), I think it makes more sense to use a palette that communicates that kind of "heat" idea.  While I think viridis is a gorgeous palette, I think the viridis "inferno" palette which I've used here does a better job of conveying how "hot" a station is, in that cooler colors (black, dark purple) represent stations with low use, and warmer colors (orange, yellow) represent stations with more frequent use.  I think that color change reduces cognitive load and makes the map more easily interpretable (but of course there is also a legend to help clarify that interpretation as well). I've added a title and clarified some of the labeling thanks to the advice from my reviewers as well.  The one thing I choose not to change was my choice of color vs. size indicators for my two variables (size of station and number of rides started). One of my reviewers indicated that they were confused by the choice I made, and I struggled for a long time with if I should change my variable mapping or not.  In the long run, after seeking advice from a number of my peers, I decided not to, mostly because I want to keep the variables as similar to their representation as possible.  For me, that means that the size of the station (number of docks) should be represented by size on the graph, where bigger dots indicate bigger stations.  Simultaneously, the frequency of use, or number of rides started kind of indicates how "hot" a station is, which to me feels like a native use of color (hotter = more popular/frequent).  I don't necessarily know that this is the right decision, but after pondering this suggestion for a long time, this is the decision I am the most comfortable with for this visualization. 
+
+In terms of interpreting this graph, as I suspected, when we graph these two things together, we see that the largest stations have the lowest number of rides started/stopped (e.g. South Station with 46 docks, but only 1,944 rides started in 2018) and the busy stations have very few docks (e.g. Dudley Town Common with 15 docks and 53,846 rides started).  This might indicate that the Bluebikes system needs to reevaluate the distribution of its bikes, either through the addition/removal of docks, or the addition of new stations in high usage areas without close surrounding alternate stations (like the Dudley Town Common Station). 
+
+### Bonus Visualization {data-commentary-width=400}
+
+```{r mapcolorbyStationEnd}
+end_count <- trips_tidy %>%
+  group_by(end_station_latitude, end_station_longitude) %>%
+  count() %>%
+  ungroup()
+
+ pal <- colorNumeric(
+  palette = "inferno",
+  domain = NULL, 
+  na.color = NA)
+ 
+(stations %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(popup = ~paste0(stations$station, "</br>", "Rides Completed: ", end_count$n, "</br>", "Number of Docks: ", stations$number_of_docks),
+                   radius = stations$number_of_docks/3,
+                   color = ~pal(start_count$n),
+                   fillOpacity = .6,
+                   weight = 5,
+                   fill = TRUE,
+                   stroke = FALSE) %>%
+  addLegend(title = "Rides Completed", pal = pal, values = c(0:50000), position = "bottomright")) %>%
+    setView(lng = -71.08, lat = 42.3555, zoom = 11.5) %>%
+  setMaxBounds(lng1 = -71.08, 
+               lat1 = 42.365, 
+               lng2 = -71.10, 
+               lat2 = 42.34)
+```
+
+***
+**Map of BlueBike Bike Share Stations in Boston by Station Size and Number of Rides Completed in 2018**
+*Larger station markers indicate stations with more bicycle docks.*
+
+As a bonus visualization, I also wanted to look at the map of station size by number of rides completed at each station.  Turns out they look pretty similar, but I thought it might be important from a policy and city planning perspective to make sure we weren't missing something in the data in terms of stations where rides are mostly completed/ended but not vice versa. 
+
+
+# Visualization 3  {data-icon="fa-calendar-alt" .storyboard}
+
+*This visualization is intended to communicate average ride length by day compared to the overall month average.*
+
+### Where I started {data-commentary-width=400}
+
+```{r histogramstart}
+trips_september <- trips_tidy %>%
+  filter(month == "september", tripduration < 3600) %>%
+  mutate(tripminutes = (tripduration/60))
+
+(plot <- trips_september %>%
+  ggplot(aes(x = tripminutes)) +
+  geom_density(fill = "black", color = "white",
+                   alpha = 0.7) +
+  geom_vline(xintercept = median(trips_september$tripminutes), 
+             color = "black") +
+  geom_density(data = filter(trips_september, weekday == "Saturday"), 
+               fill = "#335DFF", color = "white", alpha = 0.5) +
+  geom_vline(xintercept = median(filter(trips_september, weekday == "Saturday")$tripminutes),
+             color = "#335DFF") +
+    labs(x = "Trip Duration in Minutes", y = "Density", 
+         title = "Average Ride Length in September by Weekday", size = 5) +
+    theme_minimal())
+
+weekday_list <- as.list(unique(trips_september$weekday))
+```
+
+***
+
+This visualization is intended for internal use within the Bluebikes program, as well as for potential sponsors of the program. The goal of this visual is to communicate how long on average the bikes are used for, and how that varies over day of the week.  A frequently examined statistic is pure usage (number of rides) by day, but I think it is important to consider not only sheer number, but also the average ride length to understand how ridership and ridership needs change based on temporal factors such as day of the week. While I like this first draft of the visual, I think I need to improve the clarity of this graph, especially my labeling with some annotations to clarify which distribution is which on the plot itself. 
+
+### Some Improvements Made {data-commentary-width=400}
+
+```{r histogrambetter}
+trips_september <- trips_tidy %>%
+  filter(month == "september", tripduration < 3600) %>%
+  mutate(tripminutes = (tripduration/60))
+
+(plot <- trips_september %>%
+  ggplot(aes(x = tripminutes)) +
+  geom_density(fill = "black", color = "white",
+                   alpha = 0.7) +
+  geom_vline(xintercept = median(trips_september$tripminutes), 
+             color = "black", linetype = "dashed") +
+  annotate("text", 
+           label = paste("M =", round(median(trips_september$tripminutes), 2)), 
+           y = 0.07, x = 6, 
+           color = "black", size = 3) +
+  geom_density(data = filter(trips_september, weekday == "Saturday"), 
+               fill = "#335DFF", color = "white", alpha = 0.5) +
+  geom_vline(xintercept = median(filter(trips_september, weekday == "Saturday")$tripminutes),
+             color = "#335DFF", linetype = "dashed") +
+  annotate("text", 
+           label = paste("M =", round(median(filter(trips_september, 
+                                                    weekday == "Saturday")$tripminutes), 2)), 
+           y = 0.073, x = 6, 
+           color = "#335DFF", size = 3) +
+    labs(x = "Trip Duration in Minutes", y = "Density", 
+         title = "Average Ride Length in September by Weekday",
+         caption = "where M represents the median value of each distribution", size = 5) +
+    theme_minimal() +
+    annotate("text", label = c("September\n   Overall", "Saturday"),
+             y = c(0.045, 0.025), x = c(15, 22), 
+             hjust = 0, size = 3, color = c("black", "blue")))
+
+weekday_list <- as.list(unique(trips_september$weekday))
+```
+
+***
+
+This is an improved version of the earlier plot, mostly with additional color-coded notations to reduce cognitive load and provide more quantitative information, such as median ride length. The next step I want to take is wrapping this visual in a shiny application so that the user can interact with the graph and see how the distribution of ride lengths changes by day as compared to the monthly average.  
+
+My original goal was to have the user be able to pick a month and then compare within any month, but the sheer volume data was too much for my computer to handle (R kept crashing, it would take 15+ minutes to knit every time), so I opted to do a more "proof of concept" graph where I selected only one month to compare for.  I used September, because I think it is a particularly interesting month from a bike sharing perspective - the summer is officially over, and so ridership is decreasing and you are seeing a different kind of ridership - more commuting (shorter rides), and less leisure (longer rides), which makes it interesting to compare the daily averages to the monthly average to see how the needs of the bike share users changes during this more transitional time (end of summer to fall). 
+
+### Final Visualization {data-commentary-width=1000}
+
+***
+
+[View the Final Visualization Here](https://milou.shinyapps.io/Shiny_Plot/)
+
+For this final visualization, I've wrapped the graph in shiny in order to allow the user to pick a day of the week to compare to the overall monthly average. However, I ran into a myriad of issues when attempting to deploy this particular visualization online. Since you can't knit to html if your RMarkdown includes html, I tried to use shinyapps.io to host this flexdashboard, but my data files are too large for their hosting service (at least without paying for it, and I'm currently a poor grad student, so that wasn't really an option. :( ).  So, I've gone for the best work around I could come up with after trying to solve this problem for the last day or so - I've hosted just the shiny app on shinyapps.io, and I'm providing a link to view it for this web-hosted html file.  However, if you would like to see what the flexdashboard would look like with the shiny app included, you can download the markdown from my github [here](https://github.com/kgrove10/class-dashboard). 
+
+
+I've also clarified the title thanks to some great peer feedback. I chose to use the two colors (blue and black) for the visual here because I wanted a stable "background" color for the overall monthly average ride distribution, and then a brighter color (the blue) for the daily ride distribution that sits on top. Adding alpha transparency makes it so you can easily compare the two distributions as they are stacked on top of one another, but it is still easy to discern the shape of each. Along those lines, I've also changed the color of the day distribution dashed median line so it is more visible against the distribution, and altered the transparency to make the difference between the distributions more apparent. As a note, because of the right skewed shape of these distributions, I've chosen to use median as opposed to the less resistant mean statistic to represent the center of the distribution. 
+
+# Visualization 4  {data-icon="fa-crow" .storyboard}
+
+*This visualization is intended to convey the general public's communications about  bicycle sharing programs via an analysis of twitter data.* 
+
+### Where I started - Bar Graphs: Most Common Words Overall, Most Common Positive/Negative Words {data-commentary-width=400}
+```{r bargraphs}
+library(rtweet)
+library(tidytext)
+library(ggwordcloud)
+
+#twitterdata <- search_tweets("boston bike OR boston bicycle OR bluebikes OR bluebikesboston OR #BBWinterChallenge OR ridebluebikes", n = 18000, include_rts = FALSE)
+#twitterdata2 <- search_tweets("bikeshare", n = 18000, include_rts = FALSE)
+#save(twitterdata2, file = "tweets.RData")
+
+tweets <- import(here("data", "tweets.RData"))
+
+tweets_tidy <- tweets %>%
+  select(screen_name, created_at, text, hashtags) %>%
+  unnest_tokens(word, text, token = "words")
+
+c_stop_words <- bind_rows(data_frame(word = c("t.co", "https", "i’m", "и", 
+                                              "10", "de", "bikeshare"), 
+                                          lexicon = c("custom", "custom", "custom", "custom", 
+                                                      "custom", "custom", "custom")), 
+                                          stop_words)
+tweets_tidy <- tweets_tidy %>%
+  anti_join(c_stop_words)
+
+tweets_count <- tweets_tidy %>%
+  count(word, sort = TRUE)
+
+tweets_tidy <- tweets_tidy %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE)
+
+tweets_positive <- tweets_tidy %>%
+  filter(sentiment == "positive") %>%
+  head(15) %>%
+  mutate(word = reorder(as.factor(word), n))
+
+tweets_negative <- tweets_tidy %>%
+  filter(sentiment == "negative") %>%
+  head(15) %>%
+  mutate(word = reorder(as.factor(word), n))
+
+tweets_count %>%
+  filter(n > 15) %>%
+  mutate(word = reorder(as.factor(word), n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#4286f4", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 20))
+
+ggplot(tweets_positive,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#4286f4", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 20)) +
+  labs(x = NULL, y = NULL, title = "Top 15 Positively Valenced Words")
+
+ggplot(tweets_negative,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#f44271", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 20)) +
+  labs(x = NULL, y = NULL, title = "Top 15 Negatively Valenced Words")
+```
+
+***
+These bar graphs (and the word cloud on the next storyboard) are intended mostly for public consumption, in order to understand how people perceive bicycle sharing programs. I originally intended to use data only from the City of Boston, to understand their perspective on the Bluebikes program, but it turns out Boston does not tweet frequently enough to make that a possibility for analysis.  So instead, I opted to search tweets for "bikeshare" and analyze the data associated with bicycle sharing in general.  These graphs display the most frequent words overall, and then the most frequent positively and negatively valenced words within these bikeshare tweets. 
+
+### Where I started - WordCloud {data-commentary-width=400}
+
+```{r wordcloudstart}
+tweets_top <- tweets_tidy %>%
+  group_by(sentiment) %>%
+  top_n(15)
+
+set.seed(15)
+
+(sentcloud <- ggplot(tweets_top, aes(label = word, size = n, 
+                                        color = sentiment)) +
+  geom_text_wordcloud_area(rm_outside = TRUE) +
+  scale_size_area(max_size = 20) +
+  theme_minimal())
+```
+
+***
+
+This wordcloud is just a basic positively/negatively valenced worldcloud with the top words from the bikeshare tweet data.  While I like the wordcloud as a final visualization, I think it helps to present the wordcloud in tandem with the bar graph data, as it is difficult to tell from a wordcloud how much more common one word (e.g. free) is from another large word (e.g. issue), especially if one word happens to be longer than the other, which can trick the eye into thinking it is bigger than another equally common but shorter word.  There are a couple things I want to fix here: the word cloud would look better, in my opinion, if some of the words were angled a different direction, and I think adding a title would help clarify what the word cloud is conveying. 
+
+### Getting Better - Improved Bar Graphs {data-commentary-width=400}
+```{r improvedbars}
+tweets_count %>%
+  filter(n > 15) %>%
+  mutate(word = reorder(as.factor(word), n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#4286f4", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 14), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Most Frequent Words in Tweets Containing \"BikeShare\"") +
+   scale_y_continuous(expand = c(0, 0))
+  
+
+ggplot(tweets_positive,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#4286f4", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 13), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Top 15 Positively Valenced Words in BikeShare Tweets") +
+   scale_y_continuous(expand = c(0, 0), breaks = c(0, 2, 4, 6, 8, 10, 12))
+
+ggplot(tweets_negative,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#f44271", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 13), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Top 15 Negatively Valenced Words in BikeShare Tweets") +
+  scale_y_continuous(expand = c(0, 0), breaks = c(0, 5, 10, 15, 20, 25))
+```
+
+***
+
+These bar graphs are slightly improved - I've altered the text and title size to make them fit better within the plot, and I've changed the limits and breaks for the axes to improve the fit and reduce extraneous white space in the plot.  I've also improved the titles to make them a little more clear.  
+
+### Getting Better - Improved WordCloud {data-commentary-width=400}
+
+```{r wordcloudbetter}
+tweets_angled <- tweets_tidy %>%
+  group_by(sentiment) %>%
+  top_n(15) %>%
+  mutate(angle = 90 * sample(c(0, 1), n(), 
+                             replace = TRUE, 
+                             prob = c(50, 50)))
+
+set.seed(15)
+
+(sentcloud <- ggplot(tweets_angled, aes(label = word, size = n, 
+                                        color = sentiment, angle = angle)) +
+  geom_text_wordcloud_area(rm_outside = TRUE) +
+  scale_size_area(max_size = 20) +
+  theme_minimal() +
+  labs(title = "Sentiment WordCloud for Tweets about Bike Sharing") +
+  theme(plot.title = element_text(hjust = 0.5)))
+```
+
+***
+Here I've made a couple improvements to the wordcloud by adding angles (which I think makes the wordcloud more visually appealing and interesting), and by adding a title to clarify what the plot is exhibiting. 
+
+### Final Visualizations - Improved Bar Graphs {data-commentary-width=400}
+```{r finalbars}
+library(pacman)
+p_load_gh('hrbrmstr/pluralize')
+p_load(quanteda)
+
+tweets_tidy <- tweets %>%
+  select(screen_name, created_at, text, hashtags) %>%
+  unnest_tokens(word, text, token = "words")
+
+c_stop_words <- bind_rows(data_frame(word = c("t.co", "https", "i’m", "и", 
+                                              "10", "de", "bikeshare"), 
+                                          lexicon = c("custom", "custom", "custom", "custom", 
+                                                      "custom", "custom", "custom")), 
+                                          stop_words)
+tweets_tidy <- tweets_tidy %>%
+  anti_join(c_stop_words)
+
+tweets_tidy$word <- singularize(tweets_tidy$word)
+
+tweets_count <- tweets_tidy %>%
+  count(word, sort = TRUE)
+
+tweets_tidy <- tweets_tidy %>%
+  inner_join(get_sentiments("bing")) %>%
+  count(word, sentiment, sort = TRUE)
+
+tweets_positive <- tweets_tidy %>%
+  filter(sentiment == "positive") %>%
+  head(15) %>%
+  mutate(word = reorder(as.factor(word), n))
+
+tweets_negative <- tweets_tidy %>%
+  filter(sentiment == "negative") %>%
+  head(15) %>%
+  mutate(word = reorder(as.factor(word), n))
+
+tweets_count %>%
+  filter(n > 15) %>%
+  mutate(word = reorder(as.factor(word), n)) %>%
+  ggplot(aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#4286f4", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 14), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Most Frequent Words in Tweets Containing \"BikeShare\"", caption = "Twitter Data from February 2nd - 12th, 2019") +
+   scale_y_continuous(expand = c(0, 0))
+
+ggplot(tweets_positive,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#fde725", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 13), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Top 15 Positively Valenced Words in BikeShare Tweets", caption = "Twitter Data from February 2nd - 12th, 2019") +
+   scale_y_continuous(expand = c(0, 0), breaks = c(0, 2, 4, 6, 8, 10, 12))
+
+ggplot(tweets_negative,aes(x = word, y = n)) +
+  geom_col(alpha = 0.7, fill = "#471056", color = "white") +
+  coord_flip() +
+  theme_light() +
+  theme(text = element_text(size = 12), plot.title = element_text(size = 13), axis.text = element_text(size = 12)) +
+  labs(x = NULL, y = "Number of Occurrences", title = "Top 15 Negatively Valenced Words in BikeShare Tweets", caption = "Twitter Data from February 2nd - 12th, 2019") +
+  scale_y_continuous(expand = c(0, 0), breaks = c(0, 5, 10, 15, 20, 25))
+```
+
+***
+The biggest improvement I have made in these and the following wordcloud is to remove instances where words are plural and thus counted double (for example, issue and issues).  I used the `singularize` function from the `pluralize` package to convert instances of plural words to non-plural forms so they could be counted together, so here the counts for "issue" represents the combination of "issue" and "issues" we saw in the previous graphs.  I've also, thanks to the suggestions of my peer reviewers, changed to use a diverging color palette (here, viridis so it is also color-blind friendly). These probably wouldn't be my first choice of colors, mostly because I don't usually opt to use yellow as it can be difficult to see in printed materials, but I do like that the positively and negatively valenced words aren't the usual good = green, bad = red colors that you see so frequently. Finally, I've also added a footnote with information about where this data is sourced from, and the dates from which these tweets were taken. 
+
+So what do these graphs tell us?  As we can see, while the positively valenced words are fairly even in their occurrence, the negatively valenced words are dominated by one word (issue), which occurs more than three times as often as the second most occurring negative word, and more than twice as often as the most often occurring positive word. 
+
+### Final Visualizations - Improved WordCloud {data-commentary-width=400}
+
+```{r finalwordcloud}
+tweets_angled <- tweets_tidy %>%
+  group_by(sentiment) %>%
+  top_n(15) %>%
+  mutate(angle = 90 * sample(c(0, 1), n(), 
+                             replace = TRUE, 
+                             prob = c(50, 50)))
+
+set.seed(15)
+
+(sentcloud <- ggplot(tweets_angled, aes(label = word, size = n, 
+                                        color = sentiment, angle = angle)) +
+  geom_text_wordcloud_area(rm_outside = TRUE) +
+  scale_size_area(max_size = 20) +
+  theme_minimal() +
+  labs(title = "Sentiment WordCloud for Tweets about Bike Sharing", caption = "Twitter Data from February 2nd - 12th, 2019 \nfor tweets containing \"bikeshare\"") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+    scale_color_viridis_d())
+```
+
+***
+
+In this final wordcloud, I've incorporated many of the suggestions I integrated into the bar graphs earlier.  First, I've added a caption giving information about the source of the data (where and when). I've also incorporated viridis as a diverging color palette that is color-blind friendly.  
+
+So, what does this final wordcloud tell us? As the wordcloud stands now, I think it is easily interpretative by a general public audience in terms of the positive and negative sentiments most frequently associated with bicycle sharing programs. As we might expect, the top negative words mostly relate to issues with the physical bikes themselves (issue, broken), but I think it is interesting that the top positively valenced word is "free".  It's hard to interpret this without digging into the words adjacent to it, as it can mean "no cost", but also "without" (as in without cars as it was used a couple times), and also a positive emotion of feeling "free" while riding on a bike (a common theme in my qualitative research in this area).  I guess my general takeaway from this wordcloud would be that it is interesting, but I would be cautious interpreting any of the words in it in isolation.  However, I think it does a good job of conveying to a more lay-audience the general sentiment surrounding bicycle sharing (at least, according to Twitter). 
+

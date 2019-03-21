@@ -1,0 +1,80 @@
+library(tidyverse)
+library(rio)
+library(lubridate)
+library(janitor)
+
+d9 <- import("201809-bluebikes-tripdata.csv", setclass = "tbl_df") %>%
+    clean_names() %>%
+    mutate(month = "september") %>%
+    clean_names()
+
+trips_september <- d9 %>%
+    filter(tripduration < 3600) %>%
+    mutate(tripminutes = (tripduration/60))
+
+plot <- trips_september %>%
+    ggplot(aes(x = tripminutes)) +
+    geom_density(fill = "black", color = "white",
+                 alpha = 0.7) +
+    geom_vline(xintercept = median(trips_september$tripminutes), 
+               color = "black", linetype = "dashed") +
+    annotate("text", 
+             label = paste("M =", round(median(trips_september$tripminutes), 2)), 
+             y = 0.07, x = 6, 
+             color = "black", size = 3) +
+    geom_density(data = filter(trips_september, weekday == "Saturday"), 
+                 fill = "#335DFF", color = "white", alpha = 0.5) +
+    geom_vline(xintercept = median(filter(trips_september, weekday == "Saturday")$tripminutes),
+               color = "#335DFF", linetype = "dashed") +
+    annotate("text", 
+             label = paste("M =", round(median(filter(trips_september, 
+                                                      weekday == "Saturday")$tripminutes), 2)), 
+             y = 0.073, x = 6, 
+             color = "#335DFF", size = 3) +
+    labs(x = "Trip Duration in Minutes", y = "Density", 
+         title = "Average Ride Length in September by Weekday",
+         caption = "where M represents the median value of each distribution", size = 5) +
+    theme_minimal() +
+    annotate("text", label = c("September\n   Overall", "Saturday"),
+             y = c(0.045, 0.025), x = c(15, 22), 
+             hjust = 0, size = 3, color = c("black", "blue"))
+
+weekday_list <- as.list(unique(trips_september$weekday))
+
+fillCol(height = 600, flex = c(NA, 1),
+        inputPanel(
+            selectInput("weekday", label = "Weekday",
+                        choices = weekday_list,
+                        selected = 1)),
+        plotOutput("shinyPlot", height = "100%")
+)
+
+output$shinyPlot <- renderPlot({
+    (plot <- trips_september %>%
+         ggplot(aes(x = tripminutes)) +
+         geom_density(fill = "black", color = "white",
+                      alpha = 0.7) +
+         geom_vline(xintercept = median(trips_september$tripminutes), 
+                    color = "black", linetype = "dashed") +
+         annotate("text", 
+                  label = paste("M =", format(round(median(trips_september$tripminutes), 2), nsmall = 2)), 
+                  y = 0.072, x = 6, 
+                  color = "black", size = 5) +
+         geom_density(data = filter(trips_september, weekday == input$weekday), 
+                      fill = "#335DFF", color = "white", alpha = 0.4) +
+         geom_vline(xintercept = median(filter(trips_september, weekday == input$weekday)$tripminutes),
+                    color = "#456BEE", linetype = "dashed") +
+         annotate("text", 
+                  label = paste("M =", format(round(median(filter(trips_september, 
+                                                                  weekday == input$weekday)$tripminutes), 2), nsmall = 2)), 
+                  y = 0.076, x = 6, 
+                  color = "#335DFF", size = 5) +
+         labs(x = "Trip Duration in Minutes", y = "Density", 
+              title = "Average Ride Length in September by Day of Week",
+              caption = "where M represents the median value of each distribution") +
+         theme_minimal(base_size = 15) +
+         annotate("text", label = c("September\n   Overall", paste(input$weekday)),
+                  y = c(0.045, 0.025), x = c(15, 22), 
+                  hjust = 0, size = 5, color = c("black", "blue")))
+})
+    

@@ -13,7 +13,6 @@ runtime: shiny
 ```{r setup, include=FALSE}
 library(flexdashboard)
 library(plotly)
-library(DT) #datatable function
 ```
 
 Sidebar Title {.sidebar}
@@ -24,7 +23,9 @@ This project utilizes data from the Bluebikes bike share program in Boston, MA i
 
 This flexdashboard is my final project for the EDLD 610: Communicating and Transforming Data Winter 2019 class. While I utilized Boston's bike sharing program data because it is publicly available, I am working on a project with PeaceHealth Rides in Eugene, OR where I hope to apply the skills and data visualization techniques I learned in this class. 
 
-- Kivalina
+Thanks for visiting my project! 
+
+-Kivalina
 
 
 ```{r importdata, echo = FALSE}
